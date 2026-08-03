@@ -23,6 +23,8 @@ wheels/
 *.sqlite
 *.sqlite3
 *.db
+*.db-shm
+*.db-wal
 *.faiss
 *.pkl
 *.log

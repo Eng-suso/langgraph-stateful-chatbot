@@ -1,0 +1,129 @@
+import os
+import sqlite3
+from datetime import UTC, datetime
+from typing import Annotated, TypedDict
+
+from dotenv import load_dotenv
+from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
+
+load_dotenv()
+
+MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+
+llm = ChatOpenAI(
+    model_name=MODEL_NAME,
+    temperature=0.25,
+    max_completion_tokens=1000,
+    timeout=(10, 60),
+    max_retries=3,
+    stream_usage=True,
+)
+
+
+class ChatState(TypedDict):
+    """Conversation state managed by LangGraph."""
+
+    messages: Annotated[list[BaseMessage], add_messages]
+
+
+def chat_node(state: ChatState):
+    """Run one LLM turn and append the assistant response to state."""
+
+    messages = state["messages"]
+    response = llm.invoke(messages)
+    return {"messages": [response]}
+
+
+def now_iso():
+    return datetime.now(UTC).isoformat()
+
+
+connection = sqlite3.connect(database="chatbot_memory.db", check_same_thread=False)
+connection.row_factory = sqlite3.Row
+
+
+def setup_thread_metadata():
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS conversation_threads (
+            thread_id TEXT PRIMARY KEY,
+            title TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.commit()
+
+
+def list_threads():
+    setup_thread_metadata()
+    rows = connection.execute(
+        """
+        SELECT thread_id, title, created_at, updated_at
+        FROM conversation_threads
+        ORDER BY updated_at DESC
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def save_thread(thread_id: str, title: str = ""):
+    setup_thread_metadata()
+    timestamp = now_iso()
+    connection.execute(
+        """
+        INSERT INTO conversation_threads (thread_id, title, created_at, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(thread_id) DO UPDATE SET
+            title = CASE
+                WHEN excluded.title != '' THEN excluded.title
+                ELSE conversation_threads.title
+            END,
+            updated_at = excluded.updated_at
+        """,
+        (thread_id, title, timestamp, timestamp),
+    )
+    connection.commit()
+
+
+def update_thread_title(thread_id: str, title: str):
+    save_thread(thread_id, title)
+
+
+setup_thread_metadata()
+
+checkpoint = SqliteSaver(connection)
+graph = StateGraph(ChatState)
+
+graph.add_node("chatbot", chat_node)
+graph.add_edge(START, "chatbot")
+graph.add_edge("chatbot", END)
+
+# Compiled LangGraph app with SQLite checkpointing enabled.
+# The configurable thread_id controls which conversation memory is loaded.
+chatbot = graph.compile(checkpointer=checkpoint)
+
+
+def run_cli():
+    thread_id = "conversation_1"
+
+    while True:
+        user_input = input("User: ")
+
+        if user_input.lower() in ["exit", "quit"]:
+            break
+
+        config = {"configurable": {"thread_id": thread_id}}
+        initial_state = {"messages": [HumanMessage(content=user_input)]}
+        response = chatbot.invoke(initial_state, config=config)
+
+        print("Assistant:", response["messages"][-1].content)
+
+
+if __name__ == "__main__":
+    run_cli()

@@ -1,6 +1,6 @@
 import uuid
 
-from chatbot_backend import chatbot, llm
+from chatbot_backend_db import chatbot, list_threads, llm, save_thread, update_thread_title
 import streamlit as st
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage
 
@@ -36,6 +36,28 @@ def create_thread():
 
 def active_thread():
     return st.session_state["threads"][st.session_state["thread_id"]]
+
+
+def thread_config(thread_id):
+    return {"configurable": {"thread_id": thread_id}}
+
+
+def langgraph_messages_to_ui(messages):
+    ui_messages = [{"role": "assistant", "content": INTRO_MESSAGE}]
+
+    for message in messages:
+        if isinstance(message, HumanMessage):
+            ui_messages.append({"role": "user", "content": message.content})
+        elif isinstance(message, AIMessage):
+            ui_messages.append({"role": "assistant", "content": message.content})
+
+    return ui_messages
+
+
+def load_thread_messages(thread_id):
+    state = chatbot.get_state(config=thread_config(thread_id))
+    messages = state.values.get("messages", [])
+    return langgraph_messages_to_ui(messages)
 
 
 def has_user_message(messages):
@@ -84,20 +106,41 @@ def stream_thread_title(messages):
 
 
 if "threads" not in st.session_state:
-    first_thread_id = st.session_state.get("thread_id", new_thread_id())
-    previous_messages = st.session_state.get(
-        "messages_history", [{"role": "assistant", "content": INTRO_MESSAGE}]
-    )
-    st.session_state["thread_id"] = first_thread_id
-    st.session_state["thread_order"] = [first_thread_id]
-    st.session_state["threads"] = {
-        first_thread_id: {
-            "title": "",
-            "title_generated": False,
-            "has_user_message": False,
-            "messages": previous_messages,
+    saved_threads = list_threads()
+
+    if saved_threads:
+        st.session_state["threads"] = {}
+        st.session_state["thread_order"] = []
+
+        for saved_thread in reversed(saved_threads):
+            thread_id = saved_thread["thread_id"]
+            title = saved_thread["title"]
+            messages = load_thread_messages(thread_id)
+
+            st.session_state["threads"][thread_id] = {
+                "title": title,
+                "title_generated": bool(title),
+                "has_user_message": has_user_message(messages),
+                "messages": messages,
+            }
+            st.session_state["thread_order"].append(thread_id)
+
+        st.session_state["thread_id"] = saved_threads[0]["thread_id"]
+    else:
+        first_thread_id = st.session_state.get("thread_id", new_thread_id())
+        previous_messages = st.session_state.get(
+            "messages_history", [{"role": "assistant", "content": INTRO_MESSAGE}]
+        )
+        st.session_state["thread_id"] = first_thread_id
+        st.session_state["thread_order"] = [first_thread_id]
+        st.session_state["threads"] = {
+            first_thread_id: {
+                "title": "",
+                "title_generated": False,
+                "has_user_message": False,
+                "messages": previous_messages,
+            }
         }
-    }
 
 normalize_threads()
 
@@ -131,6 +174,7 @@ if user_input:
     thread = active_thread()
     thread["has_user_message"] = True
     thread["messages"].append({"role": "user", "content": user_input})
+    save_thread(st.session_state["thread_id"], thread["title"])
 
     with st.chat_message("user"):
         st.markdown(user_input)
@@ -163,3 +207,6 @@ if user_input:
 
         thread["title"] = clean_title(title)
         thread["title_generated"] = True
+        update_thread_title(st.session_state["thread_id"], thread["title"])
+    else:
+        save_thread(st.session_state["thread_id"], thread["title"])
