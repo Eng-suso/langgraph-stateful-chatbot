@@ -1,123 +1,69 @@
 # LangGraph Stateful Chatbot
 
-Streamlit chatbot built with LangGraph, OpenAI, streaming responses, SQLite-backed checkpoint memory, and LLM-generated conversation titles.
-
-This project is designed as an AI engineering portfolio repo: it separates the UI from the agent backend, uses LangGraph state management, and demonstrates how conversation memory is controlled through `thread_id` checkpoints.
+Stateful AI chatbot built with Streamlit, LangGraph, OpenAI, streaming responses, SQLite checkpointing, and LLM-generated conversation titles.
 
 ## Product Motivation
 
-Most chatbot demos answer one message at a time, but real AI products need continuity. Users expect the assistant to remember the current conversation, separate one session from another, and respond in a way that feels live instead of blocking the interface.
+Most chatbot demos are stateless: they answer one message at a time and lose the feeling of continuity. Real AI products need persistent conversations, fast perceived response time, and a clean separation between user experience and model orchestration.
 
-The goal of this project is to show how a simple LLM chat interface can be designed like a real product foundation:
+This project demonstrates how to turn a basic LLM call into a product-style chatbot foundation:
 
-- each conversation has its own isolated memory
-- the UI streams responses instead of waiting for the full completion
-- conversation titles are generated from context, like modern chat products
-- the backend owns the AI workflow instead of mixing model logic into the interface
-- configuration is kept outside the code so the app can move between local development and deployment
-
-This demonstrates an AI engineering skill that goes beyond prompting: turning an LLM call into a stateful, maintainable application pattern.
+- conversation memory is isolated by thread
+- assistant responses stream in real time
+- conversation titles are generated from context
+- UI logic is separated from the LangGraph backend
+- local persistence is handled without exposing user data in Git
 
 ## Features
 
+- Streamlit chat interface
 - LangGraph `StateGraph` backend
-- SQLite-backed LangGraph checkpointing with `SqliteSaver`
-- Persistent conversation metadata for sidebar reloads
-- Thread-based chat sessions through `configurable.thread_id`
-- LLM-generated conversation titles streamed into the sidebar
-- Streaming assistant responses in Streamlit
-- Hidden technical thread IDs for a cleaner user experience
-- Empty draft chats are not shown as conversation history
-- OpenAI model configuration through environment variables
-- Separate backend and UI entry points
+- OpenAI chat model integration
+- Token streaming for assistant responses
+- SQLite-backed checkpoints with `SqliteSaver`
+- Persistent sidebar conversation history
+- LLM-generated chat titles
+- Hidden technical thread IDs
+- `.env.example` for safe configuration
 
 ## Architecture
 
 ```text
 app.py
-  Streamlit UI
-  - renders chat messages
-  - creates a unique thread_id per conversation
-  - keeps technical thread IDs hidden from the UI
-  - avoids showing empty draft chats in the sidebar
-  - displays LLM-generated thread titles in the sidebar
-  - streams assistant tokens from LangGraph
+  Streamlit UI, chat rendering, sidebar history, streamed thread titles
 
 chatbot_backend.py
-  In-memory LangGraph backend
-  - defines ChatState
-  - calls ChatOpenAI
-  - appends messages with add_messages
-  - compiles the graph with MemorySaver checkpointing
+  In-memory LangGraph version using MemorySaver
 
 chatbot_backend_db.py
-  SQLite persistence backend
-  - defines ChatState
-  - calls ChatOpenAI
-  - appends messages with add_messages
-  - compiles the graph with SqliteSaver checkpointing
-  - stores thread metadata: thread_id, title, created_at, updated_at
-  - lets the Streamlit sidebar rebuild conversation history after reloads
+  SQLite-backed LangGraph version using SqliteSaver
+  Stores checkpoint state and conversation metadata
 ```
 
-## Why LangGraph Checkpointing Matters
+The app uses `chatbot_backend_db.py` by default. `chatbot_backend.py` is kept as a simpler in-memory version to show the progression from prototype memory to persistent memory.
 
-LangGraph checkpointing lets the app keep separate conversation histories without manually rebuilding the full prompt every time.
+## Persistence
 
-Each chat session has its own:
+LangGraph checkpoints are stored in `chatbot_memory.db`, while conversation metadata such as `thread_id`, title, and timestamps is stored in a SQLite table. This lets the app rebuild the sidebar after refresh or restart.
 
-- `thread_id`
-- generated title
-- message state
-- checkpointed graph memory
+Runtime files are intentionally excluded from Git, so cloned copies start with an empty local memory:
 
-The Streamlit app passes the active thread like this:
-
-```python
-config = {
-    "configurable": {"thread_id": st.session_state["thread_id"]}
-}
+```text
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
 ```
-
-That `thread_id` tells LangGraph which conversation state to load and update.
-
-The app keeps the technical ID separate from the user-facing title:
-
-- `thread_id` is a stable UUID used by LangGraph checkpointing
-- `title` is generated by the LLM from the chat context and shown in the sidebar
-
-This avoids using fragile natural-language titles as database or checkpoint keys.
-
-## Conversation UX
-
-The app follows the same product pattern used by modern chat tools:
-
-- a new chat starts as an invisible draft
-- the draft is not listed in the sidebar until the user sends a message
-- the assistant response streams into the chat window
-- after the first exchange, the LLM generates a short title from the conversation context
-- the generated title is streamed into the sidebar and then used as the visible conversation label
-- the internal `thread_id` is never shown to the user
-
-This keeps the interface clean while preserving the technical reliability of stable checkpoint keys.
-
-## Persistence Model
-
-The app persists two different things:
-
-- LangGraph checkpoints are stored by `SqliteSaver` in `chatbot_memory.db`
-- sidebar metadata is stored in a custom `conversation_threads` SQLite table
-
-This matters because LangGraph can remember a conversation only if the app still knows which `thread_id` values exist. The metadata table acts as the conversation index, while the LangGraph checkpoint tables store the actual message state.
 
 ## Tech Stack
 
 - Python 3.12+
 - Streamlit
 - LangGraph
-- LangChain Core
-- LangChain OpenAI
-- OpenAI API
+- LangChain
+- OpenAI
+- SQLite
 - uv
 
 ## Setup
@@ -135,7 +81,7 @@ Install dependencies:
 uv sync
 ```
 
-Create your environment file:
+Create a local environment file:
 
 ```bash
 cp .env.example .env
@@ -148,7 +94,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-4.1-mini
 ```
 
-Run the Streamlit app:
+Run the app:
 
 ```bash
 uv run streamlit run app.py
@@ -169,20 +115,13 @@ uv run streamlit run app.py
 `-- README.md
 ```
 
-## Current Limitations
+## Future Improvements
 
-- SQLite persistence is local to the machine running the app.
-- No authentication layer is included.
-- No LangSmith tracing is enabled yet.
-
-## Next Improvements
-
-- Replace local SQLite with Postgres for production multi-user persistence.
-- Add LangSmith tracing for observability.
-- Add automated tests for graph execution and thread isolation.
-- Add Docker support for reproducible deployment.
-- Add prompt/version tracking for production evaluation.
+- Replace local SQLite with Postgres for production multi-user persistence
+- Add LangSmith tracing for observability
+- Add automated tests for graph execution and thread isolation
+- Add Docker support for reproducible deployment
 
 ## License
 
-This project is licensed under the MIT License.
+MIT License
