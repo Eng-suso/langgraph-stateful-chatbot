@@ -134,3 +134,7 @@ uv run streamlit run app.py
 - Add automated tests for graph execution and thread isolation.
 - Add Docker support for reproducible deployment.
 - Add prompt/version tracking for production evaluation.
+
+## License
+
+This project is licensed under the MIT License.
