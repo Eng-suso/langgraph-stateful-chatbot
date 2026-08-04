@@ -1,6 +1,6 @@
 # LangGraph Stateful Chatbot
 
-Stateful AI chatbot built with Streamlit, LangGraph, OpenAI, streaming responses, SQLite checkpointing, and LLM-generated conversation titles.
+Stateful AI chatbot built with Streamlit, LangGraph, OpenAI, streaming responses, SQLite checkpointing, LLM-generated conversation titles, and LangSmith tracing for thread-level observability.
 
 ## Product Motivation
 
@@ -11,6 +11,7 @@ This project demonstrates how to turn a basic LLM call into a product-style chat
 - conversation memory is isolated by thread
 - assistant responses stream in real time
 - conversation titles are generated from context
+- LangSmith traces make each conversation thread easier to monitor and debug
 - UI logic is separated from the LangGraph backend
 - local persistence is handled without exposing user data in Git
 
@@ -23,6 +24,7 @@ This project demonstrates how to turn a basic LLM call into a product-style chat
 - SQLite-backed checkpoints with `SqliteSaver`
 - Persistent sidebar conversation history
 - LLM-generated chat titles
+- LangSmith tracing with thread metadata
 - Hidden technical thread IDs
 - `.env.example` for safe configuration
 
@@ -30,7 +32,8 @@ This project demonstrates how to turn a basic LLM call into a product-style chat
 
 ```text
 app.py
-  Streamlit UI, chat rendering, sidebar history, streamed thread titles
+  Streamlit UI, chat rendering, sidebar history, streamed thread titles,
+  LangSmith run metadata for per-thread tracing
 
 chatbot_backend.py
   In-memory LangGraph version using MemorySaver
@@ -56,6 +59,10 @@ Runtime files are intentionally excluded from Git, so cloned copies start with a
 .env.*
 ```
 
+## Observability
+
+The app uses LangSmith tracing to monitor each chatbot run. Every streamed LangGraph call includes the active `thread_id` in the run metadata and uses the `chat_trace` run name, making it easier to inspect, filter, and debug traces per conversation thread.
+
 ## Tech Stack
 
 - Python 3.12+
@@ -63,6 +70,7 @@ Runtime files are intentionally excluded from Git, so cloned copies start with a
 - LangGraph
 - LangChain
 - OpenAI
+- LangSmith
 - SQLite
 - uv
 
@@ -94,6 +102,14 @@ OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-4.1-mini
 ```
 
+Optionally enable LangSmith tracing:
+
+```text
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=your_langsmith_api_key_here
+LANGSMITH_PROJECT=your_langsmith_project_name
+```
+
 Run the app:
 
 ```bash
@@ -118,7 +134,6 @@ uv run streamlit run app.py
 ## Future Improvements
 
 - Replace local SQLite with Postgres for production multi-user persistence
-- Add LangSmith tracing for observability
 - Add automated tests for graph execution and thread isolation
 - Add Docker support for reproducible deployment
 

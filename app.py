@@ -182,7 +182,7 @@ if user_input:
     config = {
         "configurable": {"thread_id": st.session_state["thread_id"]},
         "metadata": {"thread_id": st.session_state["thread_id"]},
-        "run_name": "streamlit_chat",
+        "run_name": "chat_trace",
     }
 
     with st.chat_message("assistant"):
